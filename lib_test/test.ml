@@ -21,7 +21,6 @@ open Core_kernel.Std
 module Int   = IrminIdent.Int
 module Git   = IrminGit.Memory
 module Queue = MQueue.Make(Git.AO)(IrminKey.SHA1)(Int)
-module Store = Git.Make(IrminKey.SHA1)(Queue)(IrminTag.String)
 
 type choice =
   | Top
@@ -285,7 +284,8 @@ let make lambda mu nu =
 let () =
   let suite = [
     `Quick, 10 , 10 , 4;
-    `Quick, 100, 10,  3;
+    `Quick, 100, 4,  10;
+    `Quick, 100, 2,  20;
     `Slow , 100, 10, 10;
   ] in
   let test_cases =
