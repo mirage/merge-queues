@@ -1,0 +1,46 @@
+OASISFormat: 0.4
+Name:        mqueue
+Version:     0.1.0
+Synopsis:    Mergeable and concurrent queues
+Authors:     Benjamin Farinier, Thomas Gazagnaire
+License:     ISC
+Plugins:     META (0.4), DevFiles (0.4)
+BuildTools:  ocamlbuild
+
+Library mqueue
+  Path:             lib
+  Findlibname:      mqueue
+  Modules:          MQueue
+  ByteOpt:          -bin-annot
+  NativeOpt:        -bin-annot
+  BuildDepends:     irmin, comparelib.syntax, sexplib.syntax
+  XMETARequires:    irmin, comparelib, sexplib
+
+Executable test
+  Path:             lib_test
+  MainIs:           test.ml
+  Build$:           flag(tests)
+  CompiledObject:   best
+  Install:          false
+  BuildDepends:     mqueue, irmin.unix, alcotest
+
+Test test
+  Run$:             flag(tests)
+  Command:          $test -q
+  WorkingDirectory: lib_test
+
+Executable bench_linear
+  Path:             lib_bench
+  MainIs:           linear.ml
+  Build$:           flag(tests)
+  CompiledObject:   best
+  Install:          false
+  BuildDepends:     mqueue, irmin.unix
+
+Executable bench_branch
+  Path:             lib_bench
+  MainIs:           branch.ml
+  Build$:           flag(tests)
+  CompiledObject:   best
+  Install:          false
+  BuildDepends:     mqueue, irmin.unix
