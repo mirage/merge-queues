@@ -22,7 +22,7 @@ Executable test
   Build$:           flag(tests)
   CompiledObject:   best
   Install:          false
-  BuildDepends:     mqueue, irmin.unix, alcotest
+  BuildDepends:     mqueue, irmin, irmin.unix, alcotest
 
 Test test
   Run$:             flag(tests)
