@@ -20,7 +20,7 @@ open Core_kernel.Std
 
 module Int   = IrminIdent.Int
 module Git   = IrminGit.Memory
-module Queue = MQueue.Make(Git.AO)(IrminKey.SHA1)(Int)
+module Queue = Merge_queue.Make(Git.AO)(IrminKey.SHA1)(Int)
 
 type choice = Top | Bot
 

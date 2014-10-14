@@ -1,5 +1,5 @@
 OASISFormat: 0.4
-Name:        mqueue
+Name:        merge-queues
 Version:     0.1.0
 Synopsis:    Mergeable and concurrent queues
 Authors:     Benjamin Farinier, Thomas Gazagnaire
@@ -7,10 +7,10 @@ License:     ISC
 Plugins:     META (0.4), DevFiles (0.4)
 BuildTools:  ocamlbuild
 
-Library mqueue
+Library "merge-queues"
   Path:             lib
-  Findlibname:      mqueue
-  Modules:          MQueue
+  Findlibname:      merge-queues
+  Modules:          Merge_queue
   ByteOpt:          -bin-annot
   NativeOpt:        -bin-annot
   BuildDepends:     irmin, comparelib.syntax, sexplib.syntax
@@ -22,7 +22,7 @@ Executable test
   Build$:           flag(tests)
   CompiledObject:   best
   Install:          false
-  BuildDepends:     mqueue, irmin.unix, alcotest
+  BuildDepends:     merge-queues, irmin.unix, alcotest
 
 Test test
   Run$:             flag(tests)
@@ -35,7 +35,7 @@ Executable bench_linear
   Build$:           flag(tests)
   CompiledObject:   best
   Install:          false
-  BuildDepends:     mqueue, irmin.unix
+  BuildDepends:     merge-queues, irmin.unix
 
 Executable bench_branch
   Path:             lib_bench
@@ -43,4 +43,4 @@ Executable bench_branch
   Build$:           flag(tests)
   CompiledObject:   best
   Install:          false
-  BuildDepends:     mqueue, irmin.unix
+  BuildDepends:     merge-queues, irmin.unix

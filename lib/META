@@ -1,12 +1,12 @@
 # OASIS_START
-# DO NOT EDIT (digest: 0a6b223ea9050bb2e41522951e2b881a)
+# DO NOT EDIT (digest: 14ccfa29107145b849b101738631763a)
 version = "0.1.0"
 description = "Mergeable and concurrent queues"
 requires = "irmin comparelib sexplib"
-archive(byte) = "mqueue.cma"
-archive(byte, plugin) = "mqueue.cma"
-archive(native) = "mqueue.cmxa"
-archive(native, plugin) = "mqueue.cmxs"
-exists_if = "mqueue.cma"
+archive(byte) = "merge-queues.cma"
+archive(byte, plugin) = "merge-queues.cma"
+archive(native) = "merge-queues.cmxa"
+archive(native, plugin) = "merge-queues.cmxs"
+exists_if = "merge-queues.cma"
 # OASIS_STOP
 

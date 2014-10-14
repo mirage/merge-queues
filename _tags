@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 0f6a131f6ea5d2784ec1c373c65c6f63)
+# DO NOT EDIT (digest: 55027e9121d47f3f6842f7b9766dc16f)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -13,12 +13,12 @@
 ".git": not_hygienic
 "_darcs": -traverse
 "_darcs": not_hygienic
-# Library mqueue
-"lib/mqueue.cmxs": use_mqueue
-<lib/mqueue.{cma,cmxa}>: oasis_library_mqueue_byte
-<lib/*.ml{,i}>: oasis_library_mqueue_byte
-<lib/mqueue.{cma,cmxa}>: oasis_library_mqueue_native
-<lib/*.ml{,i}>: oasis_library_mqueue_native
+# Library merge-queues
+"lib/merge-queues.cmxs": use_merge-queues
+<lib/merge-queues.{cma,cmxa}>: oasis_library_merge_queues_byte
+<lib/*.ml{,i}>: oasis_library_merge_queues_byte
+<lib/merge-queues.{cma,cmxa}>: oasis_library_merge_queues_native
+<lib/*.ml{,i}>: oasis_library_merge_queues_native
 <lib/*.ml{,i}>: pkg_comparelib.syntax
 <lib/*.ml{,i}>: pkg_irmin
 <lib/*.ml{,i}>: pkg_sexplib.syntax
@@ -28,28 +28,28 @@
 <lib_test/test.{native,byte}>: pkg_irmin
 <lib_test/test.{native,byte}>: pkg_irmin.unix
 <lib_test/test.{native,byte}>: pkg_sexplib.syntax
-<lib_test/test.{native,byte}>: use_mqueue
+<lib_test/test.{native,byte}>: use_merge-queues
 <lib_test/*.ml{,i}>: pkg_alcotest
 <lib_test/*.ml{,i}>: pkg_comparelib.syntax
 <lib_test/*.ml{,i}>: pkg_irmin
 <lib_test/*.ml{,i}>: pkg_irmin.unix
 <lib_test/*.ml{,i}>: pkg_sexplib.syntax
-<lib_test/*.ml{,i}>: use_mqueue
+<lib_test/*.ml{,i}>: use_merge-queues
 # Executable bench_linear
 <lib_bench/linear.{native,byte}>: pkg_comparelib.syntax
 <lib_bench/linear.{native,byte}>: pkg_irmin
 <lib_bench/linear.{native,byte}>: pkg_irmin.unix
 <lib_bench/linear.{native,byte}>: pkg_sexplib.syntax
-<lib_bench/linear.{native,byte}>: use_mqueue
+<lib_bench/linear.{native,byte}>: use_merge-queues
 # Executable bench_branch
 <lib_bench/branch.{native,byte}>: pkg_comparelib.syntax
 <lib_bench/branch.{native,byte}>: pkg_irmin
 <lib_bench/branch.{native,byte}>: pkg_irmin.unix
 <lib_bench/branch.{native,byte}>: pkg_sexplib.syntax
-<lib_bench/branch.{native,byte}>: use_mqueue
+<lib_bench/branch.{native,byte}>: use_merge-queues
 <lib_bench/*.ml{,i}>: pkg_comparelib.syntax
 <lib_bench/*.ml{,i}>: pkg_irmin
 <lib_bench/*.ml{,i}>: pkg_irmin.unix
 <lib_bench/*.ml{,i}>: pkg_sexplib.syntax
-<lib_bench/*.ml{,i}>: use_mqueue
+<lib_bench/*.ml{,i}>: use_merge-queues
 # OASIS_STOP

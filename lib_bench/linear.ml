@@ -21,7 +21,7 @@ open Irmin_unix
 
 module Int   = IrminIdent.Int
 module Git   = IrminGit.Memory
-module Queue = MQueue.Make(Git.AO)(IrminKey.SHA1)(Int)
+module Queue = Merge_queue.Make(Git.AO)(IrminKey.SHA1)(Int)
 
 type action =
   | Push
@@ -97,7 +97,7 @@ let main () =
     iter queue lambda number >>= fun queue ->
     clean queue              >>= fun queue ->
     let stats = Queue.stats queue in
-    print_endline (MQueue.string_of_stats stats);
+    print_endline (Merge_queue.string_of_stats stats);
     return ()
   )
 
