@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: dc2dd858eeb378d07de894c1b7f7834f)
+# DO NOT EDIT (digest: bd740f1fbdc46f4e20e7bcbd953ae3c9)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -22,35 +22,29 @@ true: annot, bin_annot
 <lib/*.ml{,i,y}>: oasis_library_merge_queues_native
 <lib/*.ml{,i,y}>: pkg_comparelib.syntax
 <lib/*.ml{,i,y}>: pkg_irmin
-<lib/*.ml{,i,y}>: pkg_sexplib.syntax
 # Executable test
 <lib_test/test.{native,byte}>: pkg_alcotest
 <lib_test/test.{native,byte}>: pkg_comparelib.syntax
 <lib_test/test.{native,byte}>: pkg_irmin
 <lib_test/test.{native,byte}>: pkg_irmin.unix
-<lib_test/test.{native,byte}>: pkg_sexplib.syntax
 <lib_test/test.{native,byte}>: use_merge-queues
 <lib_test/*.ml{,i,y}>: pkg_alcotest
 <lib_test/*.ml{,i,y}>: pkg_comparelib.syntax
 <lib_test/*.ml{,i,y}>: pkg_irmin
 <lib_test/*.ml{,i,y}>: pkg_irmin.unix
-<lib_test/*.ml{,i,y}>: pkg_sexplib.syntax
 <lib_test/*.ml{,i,y}>: use_merge-queues
 # Executable bench_linear
 <lib_bench/linear.{native,byte}>: pkg_comparelib.syntax
 <lib_bench/linear.{native,byte}>: pkg_irmin
 <lib_bench/linear.{native,byte}>: pkg_irmin.unix
-<lib_bench/linear.{native,byte}>: pkg_sexplib.syntax
 <lib_bench/linear.{native,byte}>: use_merge-queues
 # Executable bench_branch
 <lib_bench/branch.{native,byte}>: pkg_comparelib.syntax
 <lib_bench/branch.{native,byte}>: pkg_irmin
 <lib_bench/branch.{native,byte}>: pkg_irmin.unix
-<lib_bench/branch.{native,byte}>: pkg_sexplib.syntax
 <lib_bench/branch.{native,byte}>: use_merge-queues
 <lib_bench/*.ml{,i,y}>: pkg_comparelib.syntax
 <lib_bench/*.ml{,i,y}>: pkg_irmin
 <lib_bench/*.ml{,i,y}>: pkg_irmin.unix
-<lib_bench/*.ml{,i,y}>: pkg_sexplib.syntax
 <lib_bench/*.ml{,i,y}>: use_merge-queues
 # OASIS_STOP

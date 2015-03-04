@@ -16,11 +16,11 @@
 *)
 
 open Lwt
-open Core_kernel.Std
 
-module Int   = IrminIdent.Int
-module Git   = IrminGit.Memory
-module Queue = Merge_queue.Make(Git.AO)(IrminKey.SHA1)(Int)
+module Int   = Tc.Int
+module AO    = Irmin_Git.AO(Git.Memory)
+module Git   = Irmin_git.Memory
+module Queue = Merge_queue.Make(AO)(Irmin.Hash.SHA1)(Int)
 
 type choice =
   | Top

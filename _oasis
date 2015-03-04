@@ -13,8 +13,8 @@ Library "merge-queues"
   Modules:          Merge_queue
   ByteOpt:          -bin-annot
   NativeOpt:        -bin-annot
-  BuildDepends:     irmin, comparelib.syntax, sexplib.syntax
-  XMETARequires:    irmin, comparelib, sexplib
+  BuildDepends:     irmin, comparelib.syntax
+  XMETARequires:    irmin, comparelib
 
 Executable test
   Path:             lib_test

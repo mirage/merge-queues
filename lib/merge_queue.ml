@@ -16,7 +16,19 @@
 *)
 
 open Lwt
-open Core_kernel.Std
+open Irmin.Merge.OP
+
+let list_dedup ?(compare=Pervasives.compare) t =
+  let t = List.sort compare t in
+  let rec aux acc = function
+    | []      -> List.rev acc
+    | [x]     -> aux (x :: acc) []
+    | x::(y::_ as tl) ->
+      match compare x y with
+      | 0 -> aux acc tl
+      | _ -> aux (x :: acc) tl
+  in
+  aux [] t
 
 module Log = Log.Make(struct let section = "QUEUE" end)
 
@@ -38,7 +50,7 @@ let string_of_stats t =
     ((float t.writes) /. (float t.ops))
 
 module type S = sig
-  include IrminContents.S
+  include Irmin.Contents.S
   type elt
   val create : unit -> t Lwt.t
   val length : t -> int Lwt.t
@@ -52,11 +64,20 @@ module type S = sig
   val stats : t -> stats
 end
 
+module type Config = sig
+  val conf: Irmin.config
+  val task: string -> Irmin.task
+end
+
 module Make
     (AO: Irmin.AO_MAKER)
-    (K: IrminKey.S)
-    (V: IrminIdent.S)
+    (K: Irmin.Hash.S)
+    (V: Tc.S0)
+    (P: Irmin.Path.S)
+    (Config: Config)
 = struct
+
+  module Path = P
 
   module C = struct
 
@@ -72,7 +93,15 @@ module Make
       pop   : int;
       top   : K.t;
       bottom: K.t;
-    } with compare, sexp
+    }
+
+    module Index = Tc.Biject
+        (Tc.Pair (Tc.Pair(Tc.Int)(Tc.Int))(Tc.Pair (K)(K)))
+        (struct
+          type t = index
+          let to_t ((push, pop), (top, bottom)) = {push; pop; top; bottom}
+          let of_t {push; pop; top; bottom} = (push, pop), (top, bottom)
+        end)
 
     (*
      * Type of node, which are elements manipulated by queue operations.
@@ -85,25 +114,64 @@ module Make
       previous: K.t option;
       elt     : K.t option;
       branch  : index option;
-    } with compare, sexp
+    }
 
-    let equal_node n1 n2 =
-      compare_node n1 n2 = 0
+    module KO = Tc.Option (K)
+    module Node = Tc.Biject
+        (Tc.Pair(Tc.Pair(KO)(KO))(Tc.Pair(KO)(Tc.Option(Index))))
+        (struct
+          type t = node
+          let to_t ((next, previous), (elt, branch)) =
+            {next; previous; elt; branch}
+          let of_t {next; previous; elt; branch} =
+            (next, previous), (elt, branch)
+        end)
 
     (*
      * Type of store elements.
     *)
-    type elt =
-      | Index of index
-      | Node  of node
+    type t =
+      | Index of Index.t
+      | Node  of Node.t
       | Elt   of V.t
-    with compare, sexp
+    with compare
 
-    module X = IrminIdent.Make(struct
-        type t = elt
-        with compare, sexp
-      end)
-    include X
+    let equal_node n1 n2 =
+      Node.compare n1 n2 = 0
+
+    let to_json = function
+      | Index i -> `O [ "index", Index.to_json i ]
+      | Node n  -> `O [ "node" , Node.to_json n ]
+      | Elt e   -> `O [ "elt"  , V.to_json e ]
+
+    let of_json = function
+      | `O [ "index", j ] -> Index (Index.of_json j)
+      | `O [ "node" , j ] -> Node (Node.of_json j)
+      | `O [ "elt"  , j ] -> Elt (V.of_json j)
+      | j -> Ezjsonm.parse_error j "C.of_json"
+
+    let equal x y = match x, y with
+      | Index x, Index y -> Index.equal x y
+      | Node x, Node y -> Node.equal x y
+      | Elt x, Elt y -> V.equal x y
+      | _ -> false
+
+    let hash = Hashtbl.hash
+
+    (* FIXME: slow *)
+    let to_string t = Ezjsonm.to_string (to_json t)
+    let of_string s = of_json (Ezjsonm.from_string s)
+    let write t buf =
+      let str = to_string t in
+      let len = String.length str in
+      Cstruct.blit_from_string str 0 buf 0 len;
+      Cstruct.shift buf len
+    let read buf =
+      Mstruct.get_string buf (Mstruct.length buf)
+      |> of_string
+    let size_of t =
+      let str = to_string t in
+      String.length str
 
   end
 
@@ -122,6 +190,9 @@ module Make
     module S = AO(K)(C)
 
     include S
+
+    let create () =
+      create Config.conf Config.task
 
     let read t k =
       incr_read ();
@@ -146,13 +217,16 @@ module Make
    * 'root' is the key of the 'empty' element of store.
   *)
   type queue = {
-    index: C.index;
+    index: C.Index.t;
     root : K.t;
-  } with sexp, compare
+  }
 
-  module T = IrminIdent.Make(struct
-      type t = queue with sexp, compare
-    end)
+  module T = Tc.Biject (Tc.Pair (C.Index)(K))
+      (struct
+        type t = queue
+        let to_t (index, root) = {index; root}
+        let of_t {index; root} = (index, root)
+      end)
   include T
 
   type elt = V.t
@@ -169,8 +243,8 @@ module Make
    * 'top' and 'bottom' are pointed on the 'empty' node.
   *)
   let create () =
-    Store.create ()                >>= fun store ->
-    Store.add store (C.Node empty) >>= fun root ->
+    Store.create () >>= fun store ->
+    Store.add (store "create") (C.Node empty) >>= fun root ->
     let index = {
       C.push = 0;
       C.pop = 0;
@@ -183,7 +257,7 @@ module Make
     return (t.index.C.push - t.index.C.pop)
 
   let is_empty t =
-    return Int.(t.index.C.push = t.index.C.pop)
+    return (t.index.C.push = t.index.C.pop)
 
   (*
    * Queues are implemented with two lists,
@@ -192,7 +266,6 @@ module Make
    * 'normalise' flush the push list into the pop one.
   *)
   let normalize q =
-
     Store.create () >>= fun store ->
     let index = q.index in
     let root = q.root in
@@ -214,7 +287,7 @@ module Make
            k queue k_old_node k_new_node
          )
        | Some old_next -> (
-           Store.read_exn store old_next >>= fun old_next ->
+           Store.read_exn (store "from_top: read") old_next >>= fun old_next ->
            match old_next with
            | C.Index _
            | C.Elt _ -> fail (Error `Corrupted)
@@ -224,7 +297,7 @@ module Make
       match old_node.C.elt with
       | None -> return new_next
       | Some elt -> (
-          Store.add store (C.Node new_next) >>= fun new_key_node ->
+          Store.add (store "from_top: add") (C.Node new_next) >>= fun new_key_node ->
           let new_node = {
             C.next = Some new_key_node;
             C.previous = None;
@@ -242,12 +315,12 @@ module Make
 
       match old_node.C.branch with
       | Some index -> (
-          Store.read_exn store index.C.top >>= fun branch_top ->
+          Store.read_exn (store "from_bottom: old=index") index.C.top >>= fun branch_top ->
           match branch_top with
           | C.Index _
           | C.Elt _ -> fail (Error `Corrupted)
           | C.Node branch_top ->
-            Store.read_exn store index.C.bottom >>= fun branch_bottom ->
+            Store.read_exn (store "from_bottom: old=node")  index.C.bottom >>= fun branch_bottom ->
             match branch_bottom with
             | C.Index _
             | C.Elt _ ->  fail (Error `Corrupted)
@@ -259,7 +332,7 @@ module Make
               match old_node.C.previous with
               | None -> return new_node
               | Some old_previous -> (
-                  Store.read_exn store old_previous >>= fun old_previous ->
+                  Store.read_exn (store "from_bottom: old=node/previous") old_previous >>= fun old_previous ->
                   match old_previous with
                   | C.Index _
                   | C.Elt _ -> fail (Error `Corrupted)
@@ -273,12 +346,12 @@ module Make
               return new_node;
             )
           | Some old_previous -> (
-              Store.read_exn store old_previous >>= fun old_previous ->
+              Store.read_exn (store "from_bottom: old=None") old_previous >>= fun old_previous ->
               match old_previous with
               | C.Index _
               | C.Elt _ -> fail (Error `Corrupted)
               | C.Node old_previous -> (
-                  Store.add store (C.Node new_node) >>= fun key_node ->
+                  Store.add (store "from_bottom: old=None/previous=node") (C.Node new_node) >>= fun key_node ->
                   let new_previous = {
                     C.next = Some key_node;
                     C.previous = None;
@@ -290,18 +363,18 @@ module Make
         )
     in
 
-    Store.read_exn store index.C.top >>= fun top_node ->
+    Store.read_exn (store "from_bottom") index.C.top >>= fun top_node ->
     match top_node with
     | C.Index _
     | C.Elt _ -> fail (Error `Corrupted)
     | C.Node top_node ->
-      Store.read_exn store index.C.bottom >>= fun bottom_node ->
+      Store.read_exn (store "from_bottom: top=node") index.C.bottom >>= fun bottom_node ->
       match bottom_node with
       | C.Index _
       | C.Elt _ -> fail (Error `Corrupted)
       | C.Node bottom_node ->
         apply from_top from_bottom q top_node bottom_node empty >>= fun node ->
-        Store.add store (C.Node node) >>= fun key_top ->
+        Store.add (store "from_bottom: top=node/bottom=node") (C.Node node) >>= fun key_top ->
         let index = {
           C.push = index.C.push;
           C.pop = index.C.pop;
@@ -320,14 +393,14 @@ module Make
     let index = q.index in
     let root = q.root in
 
-    Store.add store (C.Elt elt) >>= fun key_elt ->
+    Store.add (store "push 1") (C.Elt elt) >>= fun key_elt ->
     let node = {
       C.next = None;
       C.previous = Some index.C.bottom;
       C.elt = Some key_elt;
       C.branch = None;
     } in
-    Store.add store (C.Node node) >>= fun key_node ->
+    Store.add (store "push 2") (C.Node node) >>= fun key_node ->
     let index = {
       C.push = index.C.push + 1;
       C.pop = index.C.pop;
@@ -348,7 +421,7 @@ module Make
       C.elt = None;
       C.branch = Some branch;
     } in
-    Store.add store (C.Node node) >>= fun key_node ->
+    Store.add (store "push_branch") (C.Node node) >>= fun key_node ->
     let index = {
       C.push = index.C.push;
       C.pop = index.C.pop;
@@ -368,10 +441,10 @@ module Make
     let index = q.index in
     let root = q.root in
 
-    if Int.(index.C.push = index.C.pop) then
+    if index.C.push = index.C.pop then
       return None
     else
-      Store.read_exn store index.C.top >>= fun node ->
+      Store.read_exn (store "pop 1") index.C.top >>= fun node ->
       match node with
       | C.Index _
       | C.Elt _ -> fail (Error `Corrupted)
@@ -379,7 +452,7 @@ module Make
         match node.C.elt with
         | None -> normalize q >>= fun q -> pop q
         | Some elt ->
-          Store.read_exn store elt >>= fun elt ->
+          Store.read_exn (store "pop 2") elt >>= fun elt ->
           match elt with
           | C.Index _
           | C.Node _ -> fail (Error `Corrupted)
@@ -407,10 +480,10 @@ module Make
     let index = q.index in
     let root = q.root in
 
-    if Int.(index.C.push = index.C.pop) then
+    if index.C.push = index.C.pop then
       fail Empty
     else
-      Store.read_exn store index.C.top >>= fun node ->
+      Store.read_exn (store "pop_exn") index.C.top >>= fun node ->
       match node with
       | C.Index _
       | C.Elt _ -> fail (Error `Corrupted)
@@ -418,7 +491,7 @@ module Make
         match node.C.elt with
         | None -> normalize q >>= fun q -> pop_exn q
         | Some elt ->
-          Store.read_exn store elt >>= fun elt ->
+          Store.read_exn (store "pop_exn") elt >>= fun elt ->
           match elt with
           | C.Index _
           | C.Node _ -> fail (Error `Corrupted)
@@ -444,10 +517,10 @@ module Make
     Store.create () >>= fun store ->
     let index = q.index in
 
-    if Int.(index.C.push = index.C.pop) then
+    if index.C.push = index.C.pop then
       return None
     else
-      Store.read_exn store index.C.top >>= fun node ->
+      Store.read_exn (store "peek 1") index.C.top >>= fun node ->
       match node with
       | C.Index _
       | C.Elt _ -> fail (Error `Corrupted)
@@ -455,7 +528,7 @@ module Make
         match node.C.elt with
         | None -> normalize q >>= fun q -> peek q
         | Some elt ->
-          Store.read_exn store elt >>= fun elt ->
+          Store.read_exn (store "peek 2") elt >>= fun elt ->
           match elt with
           | C.Index _
           | C.Node _ -> fail (Error `Corrupted)
@@ -471,10 +544,10 @@ module Make
     Store.create () >>= fun store ->
     let index = q.index in
 
-    if Int.(index.C.push = index.C.pop) then
+    if index.C.push = index.C.pop then
       raise Empty
     else
-      Store.read_exn store index.C.top >>= fun node ->
+      Store.read_exn (store "peek_exn 1") index.C.top >>= fun node ->
       match node with
       | C.Index _
       | C.Elt _ -> fail (Error `Corrupted)
@@ -482,7 +555,7 @@ module Make
         match node.C.elt with
         | None -> normalize q >>= fun q -> peek_exn q
         | Some elt ->
-          Store.read_exn store elt >>= fun elt ->
+          Store.read_exn (store "peek_exn 2") elt >>= fun elt ->
           match elt with
           | C.Index _
           | C.Node _ -> fail (Error `Corrupted)
@@ -500,11 +573,11 @@ module Make
           | None -> return (Printf.sprintf (if C.equal_node node empty then "Empty%!"
                                             else "None%!"))
           | Some key ->
-            Store.read_free store key >>= fun elt ->
+            Store.read_free (store "from_top 1")  key >>= fun elt ->
             return (Printf.sprintf "Some %s%!" (C.to_string elt))
         )
       | Some next -> (
-          Store.read_free store next >>= fun next ->
+          Store.read_free (store "from_top 2") next >>= fun next ->
           match next with
           | C.Index _
           | C.Elt _ -> assert false
@@ -513,7 +586,7 @@ module Make
               match node.C.elt with
               | None ->return (Printf.sprintf "None -> %s%!" string)
               | Some elt ->
-                Store.read_free store elt >>= fun elt ->
+                Store.read_free (store "from_top 3") elt >>= fun elt ->
                 return (Printf.sprintf "Some %s -> %s%!" (C.to_string elt) string)
             )
         )
@@ -526,11 +599,11 @@ module Make
           | None -> return (Printf.sprintf (if C.equal_node node empty then "Empty%!"
                                             else "None%!"))
           | Some key ->
-            Store.read_free store key >>= fun elt ->
+            Store.read_free (store "from_bottom 1")  key >>= fun elt ->
             return (Printf.sprintf "Some %s%!" (C.to_string elt))
         )
       | Some previous -> (
-          Store.read_free store previous >>= fun previous ->
+          Store.read_free (store "from_bottom 2") previous >>= fun previous ->
           match previous with
           | C.Index _
           | C.Elt _ -> assert false
@@ -539,19 +612,19 @@ module Make
               match node.C.elt with
               | None ->return (Printf.sprintf "None -> %s%!" string)
               | Some elt ->
-                Store.read_free store elt >>= fun elt ->
+                Store.read_free (store "from_bottom 3") elt >>= fun elt ->
                 return (Printf.sprintf "Some %s -> %s%!" (C.to_string elt) string)
             )
         )
     in
 
-    Store.read_free store q.index.C.top >>= fun top ->
+    Store.read_free (store "from_bottom 4") q.index.C.top >>= fun top ->
     match top with
     | C.Index _
     | C.Elt _ -> assert false
     | C.Node top ->
       from_top q top >>= fun string_top ->
-      Store.read_free store q.index.C.bottom >>= fun bottom ->
+      Store.read_free (store "from_bottom 5") q.index.C.bottom >>= fun bottom ->
       match bottom with
       | C.Index _
       | C.Elt _ -> assert false
@@ -568,11 +641,11 @@ module Make
     let writes = get_write () in
     { ops; reads; writes }
 
-  let merge =
+  let merge: Path.t -> t option Irmin.Merge.t =
 
     let rec clean old q =
-      if Int.(old.index.C.push > q.index.C.pop
-              && q.index.C.push > q.index.C.pop) then
+      if old.index.C.push > q.index.C.pop
+      && q.index.C.push > q.index.C.pop then
         pop_exn q >>= fun (_, q) -> clean old q
       else return q
     in
@@ -583,32 +656,34 @@ module Make
       then
         create () >>= fun q2 -> return (q1, q2)
       else (
-        if Int.(q2.index.C.pop > q1.index.C.pop
-                && old.index.C.push > q1.index.C.pop
-                && q1.index.C.push > q1.index.C.pop)
+        if q2.index.C.pop > q1.index.C.pop
+        && old.index.C.push > q1.index.C.pop
+        && q1.index.C.push > q1.index.C.pop
         then
           pop_exn q1 >>= fun (_, q1) -> equalize old q1 q2
-        else clean old q2 >>= fun q2 -> return (q1, q2)
-      )
+        else clean old q2 >>= fun q2 -> return (q1, q2))
     in
 
-    let merge ~origin ~old q1 q2 =
-      assert K.(q1.root = q2.root && old.root = q1.root);
-      let root = q1.root in
-      equalize old q1 q2 >>= fun (q1, q2) ->
-      (if Int.(q2.index.C.push > q2.index.C.pop) then
-         push_branch q1 q2.index
-       else return q1) >>= fun q ->
-      let index = {
-        C.push = q1.index.C.push + q2.index.C.push - old.index.C.push;
-        C.pop = q1.index.C.pop + q2.index.C.pop - old.index.C.push;
-        C.top = q.index.C.top;
-        C.bottom = q.index.C.bottom;
-      } in
-      IrminMerge.OP.ok {index; root}
+    let merge ~old q1 q2 =
+      old () >>= function  (* FIXME *)
+      | `Conflict _ | `Ok None -> conflict "merge"
+      | `Ok (Some old) ->
+        assert K.(q1.root = q2.root && old.root = q1.root);
+        let root = q1.root in
+        equalize old q1 q2 >>= fun (q1, q2) ->
+        (if q2.index.C.push > q2.index.C.pop then
+           push_branch q1 q2.index
+         else return q1) >>= fun q ->
+        let index = {
+          C.push = q1.index.C.push + q2.index.C.push - old.index.C.push;
+          C.pop = q1.index.C.pop + q2.index.C.pop - old.index.C.push;
+          C.top = q.index.C.top;
+          C.bottom = q.index.C.bottom;
+        } in
+        ok {index; root}
     in
 
-    IrminMerge.create' (module T) merge
+    fun _path -> Irmin.Merge.option (module T) merge
 
   (*
    * Return all the keys (index, node or value) that are accessible.
@@ -627,7 +702,7 @@ module Make
     let rec iter tmp_list res_list = match tmp_list with
       | [] -> return res_list
       | key :: tmp_list ->
-        Store.read_exn store key >>= fun value ->
+        Store.read_exn (store "iter") key >>= fun value ->
         match value with
         | C.Elt _       -> fail (Error `Invalid_access)
         | C.Index index -> iter
@@ -647,6 +722,6 @@ module Make
     in
 
     iter list (q.root::list) >>= fun list ->
-    return (List.dedup list)
+    return (list_dedup list)
 
 end
