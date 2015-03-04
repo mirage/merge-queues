@@ -15,12 +15,15 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 *)
 
-open Lwt
-open Core_kernel.Std
+let (>>=) = Lwt.bind
 
-module Int   = IrminIdent.Int
-module Git   = IrminGit.Memory
-module Queue = Merge_queue.Make(Git.AO)(IrminKey.SHA1)(Int)
+module Git = Irmin_git.AO(Git.Memory)
+module Config = struct
+  let conf = Irmin_git.config ()
+  let task = Irmin_unix.task
+end
+module Path = Irmin.Path.String_list
+module Queue = Merge_queue.Make(Git)(Irmin.Hash.SHA1)(Tc.Int)(Path)(Config)
 
 type choice = Top | Bot
 
@@ -37,7 +40,7 @@ let choose lambda x =
 
 let rec clean q =
   Queue.is_empty q >>= fun b ->
-  if b then return q
+  if b then Lwt.return q
   else
     Queue.pop_exn q >>= fun (_, q) ->
     clean q
@@ -55,29 +58,30 @@ let rec filling queue lambda count push pop =
           filling queue lambda count push (pop + 1)
         )
     )
-  | Bot -> return (queue, count, push, pop)
+  | Bot -> Lwt.return (queue, count, push, pop)
 
 and branching queue lambda mu nu push pop branch depth =
   building queue lambda mu nu push pop branch (depth + 1) >>= fun q1 ->
   match choose mu branch with
   | Top -> (
       branching queue lambda mu nu push pop (branch + 1) depth >>= fun q2 ->
-      let origin = IrminOrigin.create "%i%i%i%i" push pop branch depth in
-      IrminMerge.merge Queue.merge ~origin ~old:queue q1 q2 >>= fun res ->
+      let old = Irmin.Merge.promise (Some queue) in
+      Queue.merge [] ~old (Some q1) (Some q2) >>= fun res ->
       match res with
-      | `Conflict s -> failwith s
-      | `Ok q       -> return q
+      | `Conflict s  -> failwith s
+      | `Ok None     -> failwith "none"
+      | `Ok (Some q) -> Lwt.return q
     )
-  | Bot -> return q1
+  | Bot -> Lwt.return q1
 
 and building queue lambda mu nu push pop branch depth =
   filling queue lambda 0 push pop >>= fun (queue, count, push, pop) ->
   match choose nu depth with
   | Top -> branching queue lambda mu nu push pop branch depth
-  | Bot -> return queue
+  | Bot -> Lwt.return queue
 
 let error () =
-  eprintf "usage: queue <lambda> <mu> <nu>\n";
+  Printf.eprintf "usage: queue <lambda> <mu> <nu>\n";
   exit 1
 
 let main () =
@@ -95,7 +99,7 @@ let main () =
     clean queue                         >>= fun queue ->
     Queue.dump queue                    >>= fun string ->
     print_endline string;
-    return ()
+    Lwt.return ()
   )
 
 let () =

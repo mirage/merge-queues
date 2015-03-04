@@ -15,13 +15,15 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 *)
 
-open Lwt
-open Core_kernel.Std
-open Irmin_unix
+let (>>=) = Lwt.bind
 
-module Int   = IrminIdent.Int
-module Git   = IrminGit.Memory
-module Queue = Merge_queue.Make(Git.AO)(IrminKey.SHA1)(Int)
+module Git = Irmin_git.AO(Git.Memory)
+module Config = struct
+  let conf = Irmin_git.config ()
+  let task = Irmin_unix.task
+end
+module Path = Irmin.Path.String_list
+module Queue = Merge_queue.Make(Git)(Irmin.Hash.SHA1)(Tc.Int)(Path)(Config)
 
 type action =
   | Push
@@ -54,7 +56,7 @@ let choose_action lambda push pop =
 
 let rec clean q =
   Queue.is_empty q >>= fun b ->
-  if b then return q
+  if b then Lwt.return q
   else
     Queue.pop_exn q >>= fun (_, q) ->
     clean q
@@ -76,11 +78,11 @@ let rec iter queue lambda max =
       iter queue lambda max
   )
   else
-    return queue
+    Lwt.return queue
 
 
 let error () =
-  eprintf "usage: queue <lambda> <number>\n";
+  Printf.eprintf "usage: queue <lambda> <number>\n";
   exit 1
 
 
@@ -98,7 +100,7 @@ let main () =
     clean queue              >>= fun queue ->
     let stats = Queue.stats queue in
     print_endline (Merge_queue.string_of_stats stats);
-    return ()
+    Lwt.return ()
   )
 
 

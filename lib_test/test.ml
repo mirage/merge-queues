@@ -15,12 +15,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 *)
 
-open Lwt
+open Printf
+let (>>=) = Lwt.bind
 
-module Int   = Tc.Int
-module AO    = Irmin_Git.AO(Git.Memory)
-module Git   = Irmin_git.Memory
-module Queue = Merge_queue.Make(AO)(Irmin.Hash.SHA1)(Int)
+module Git = Irmin_git.AO(Git.Memory)
+module Config = struct
+  let conf = Irmin_git.config ()
+  let task = Irmin_unix.task
+end
+module Path = Irmin.Path.String_list
+module Queue = Merge_queue.Make(Git)(Irmin.Hash.SHA1)(Tc.Int)(Path)(Config)
 
 type choice =
   | Top
@@ -39,12 +43,12 @@ let choose lambda x =
 
 let rec clean q =
   Queue.is_empty q >>= fun b ->
-  if b then return q
+  if b then Lwt.return q
   else
     Queue.pop_exn q >>= fun (_, q) ->
     clean q
 
-let assert_queue q_old q1 q2 q_merge =
+let assert_queue (q_old:Queue.t) (q1:Queue.t) (q2:Queue.t) (q_merge:Queue.t) =
 
   let rec prepare_old_merge q_old q1 q2 q_merge q_tmp =
     (*print_endline "prepare_old_merge";*)
@@ -55,7 +59,7 @@ let assert_queue q_old q1 q2 q_merge =
         Queue.is_empty q1 >>= fun b1 ->
         Queue.is_empty q2 >>= fun b2 ->
         OUnit.assert_bool "prepare_old_merge" (b1 && b2);
-        return ()
+        Lwt.return ()
       )
     | None, Some (a_merge, q_merge') -> (
         prepare_old_q1_q2 q_old q1 q2 q_merge
@@ -79,7 +83,7 @@ let assert_queue q_old q1 q2 q_merge =
         Queue.is_empty q1 >>= fun b1 ->
         Queue.is_empty q2 >>= fun b2 ->
         OUnit.assert_bool "prepare_old_merge_continue" (b1 && b2);
-        return ()
+        Lwt.return ()
       )
     | None, Some (a_merge, q_merge') -> (
         prepare_old_q1_q2 q_old q1 q2 q_merge
@@ -103,7 +107,7 @@ let assert_queue q_old q1 q2 q_merge =
     | None, None, None -> (
         Queue.is_empty q_merge >>= fun b ->
         OUnit.assert_bool "prepare_old_q1_q2 (1)" b;
-        return ()
+        Lwt.return ()
       )
     | None, None, Some (a2, q2') -> (
         compare_q2_merge q2 q_merge
@@ -117,7 +121,7 @@ let assert_queue q_old q1 q2 q_merge =
     | Some (a_old, q_old'), None, None -> (
         Queue.is_empty q_merge >>= fun b ->
         OUnit.assert_bool "prepare_old_q1_q2 (2)" b;
-        return ()
+        Lwt.return ()
       )
     | Some (a_old, q_old'), None, Some (a2, q2') -> (
         if (a_old = a2) then
@@ -147,7 +151,7 @@ let assert_queue q_old q1 q2 q_merge =
     | None, None -> (
         Queue.is_empty q_merge >>= fun b ->
         OUnit.assert_bool "prepare_old_q1 (1)" b;
-        return ()
+        Lwt.return ()
       )
     | None, Some (a1, q1') -> (
         compare_q1_q2_merge q1 q2 q_merge
@@ -155,7 +159,7 @@ let assert_queue q_old q1 q2 q_merge =
     | Some (a_old, q_old'), None -> (
         Queue.is_empty q_merge >>= fun b ->
         OUnit.assert_bool "prepare_old_q1 (2)" b;
-        return ()
+        Lwt.return ()
       )
     | Some (a_old, q_old'), Some (a1, q1') -> (
         OUnit.assert_bool "prepare_old_q1 (3)" (a_old = a1);
@@ -170,7 +174,7 @@ let assert_queue q_old q1 q2 q_merge =
     | None, None -> (
         Queue.is_empty q_merge >>= fun b ->
         OUnit.assert_bool "prepare_old_q2 (1)" b;
-        return ()
+        Lwt.return ()
       )
     | None, Some (a2, q2') -> (
         compare_q1_q2_merge q1 q2 q_merge
@@ -178,7 +182,7 @@ let assert_queue q_old q1 q2 q_merge =
     | Some (a_old, q_old'), None -> (
         Queue.is_empty q_merge >>= fun b ->
         OUnit.assert_bool "prepare_old_q2 (2)" b;
-        return ()
+        Lwt.return ()
       )
     | Some (a_old, q_old'), Some (a2, q2') -> (
         OUnit.assert_bool "prepare_old_q2 (3)" (a_old = a2);
@@ -191,7 +195,7 @@ let assert_queue q_old q1 q2 q_merge =
     Queue.pop q2 >>= fun opt2 ->
     Queue.pop q_merge >>= fun opt_merge ->
     match (opt1, opt2, opt_merge) with
-    | None, None, None -> return ()
+    | None, None, None -> Lwt.return ()
     | None, None, Some (a_merge, q_merge') ->
       OUnit.assert_failure "compare_q1_q2_merge (1)"
     | None, Some (a2, q2'), None ->
@@ -215,7 +219,7 @@ let assert_queue q_old q1 q2 q_merge =
     Queue.pop q1 >>= fun opt1 ->
     Queue.pop q_merge >>= fun opt_merge ->
     match (opt1, opt_merge) with
-    | None, None -> return ()
+    | None, None -> Lwt.return ()
     | None, Some (a_merge, q_merge') ->
       OUnit.assert_failure "compare_q1_merge (1)"
     | Some (a1, q1'), None ->
@@ -229,7 +233,7 @@ let assert_queue q_old q1 q2 q_merge =
     Queue.pop q2 >>= fun opt2 ->
     Queue.pop q_merge >>= fun opt_merge ->
     match (opt2, opt_merge) with
-    | None, None -> return ()
+    | None, None -> Lwt.return ()
     | None, Some (a_merge, q_merge') ->
       OUnit.assert_failure "compare_q2_merge (1)"
     | Some (a2, q2'), None ->
@@ -253,33 +257,33 @@ let rec filling queue lambda count push pop =
           filling queue lambda count push (pop + 1)
         )
     )
-  | Bot -> return (queue, count, push, pop)
+  | Bot -> Lwt.return (queue, count, push, pop)
 
 and branching queue lambda mu nu push pop branch depth =
   building queue lambda mu nu push pop branch (depth + 1) >>= fun q1 ->
   match choose mu branch with
   | Top -> (
       branching queue lambda mu nu push pop (branch + 1) depth >>= fun q2 ->
-      let origin = IrminOrigin.create "%i%i%i%i" push pop branch depth in
-      IrminMerge.merge Queue.merge ~origin ~old:queue q1 q2 >>= function
-      | `Conflict s -> OUnit.assert_failure s
-      | `Ok merge_q -> (
+      let old = Irmin.Merge.promise (Some queue) in
+      Queue.merge [] ~old (Some q1) (Some q2) >>= function
+      | `Conflict s        -> OUnit.assert_failure s
+      | `Ok None           -> OUnit.assert_failure "branching: none"
+      | `Ok Some (merge_q) ->
           assert_queue queue q1 q2 merge_q >>= fun () ->
-          return merge_q
-        )
+          Lwt.return merge_q
     )
-  | Bot -> return q1
+  | Bot -> Lwt.return q1
 
 and building queue lambda mu nu push pop branch depth =
   filling queue lambda 0 push pop >>= fun (queue, count, push, pop) ->
   match choose nu depth with
   | Top -> branching queue lambda mu nu push pop branch depth
-  | Bot -> return queue
+  | Bot -> Lwt.return queue
 
 let make lambda mu nu =
   Queue.create ()                     >>= fun queue ->
   building queue lambda mu nu 0 0 0 0 >>= fun _ ->
-  return ()
+  Lwt.return ()
 
 let () =
   let suite = [
@@ -289,7 +293,7 @@ let () =
     `Slow , 100, 10, 10;
   ] in
   let test_cases =
-    List.map ~f:(fun (q, lambda, mu, nu) ->
+    List.map (fun (q, lambda, mu, nu) ->
         Printf.sprintf "lambda=%d mu=%d nu=%d" lambda mu nu,
         q,
         fun () -> Lwt_unix.run (make lambda mu nu)

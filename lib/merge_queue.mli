@@ -96,3 +96,4 @@ module Make
     (P: Irmin.Path.S)
     (C: Config)
   : S with type elt = V.t
+       and module Path = P
