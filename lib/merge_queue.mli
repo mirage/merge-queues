@@ -38,7 +38,7 @@ exception Error of error
 
 module type S = sig
 
-  include IrminContents.S
+  include Irmin.Contents.S
   (** The type of queues. *)
 
   type elt
@@ -84,8 +84,16 @@ module type S = sig
 
 end
 
+module type Config = sig
+  val conf: Irmin.config
+  val task: string -> Irmin.task
+end
+
 module Make
     (AO: Irmin.AO_MAKER)
-    (K: IrminKey.S)
-    (V: IrminIdent.S)
+    (K: Irmin.Hash.S)
+    (V: Tc.S0)
+    (P: Irmin.Path.S)
+    (C: Config)
   : S with type elt = V.t
+       and module Path = P
