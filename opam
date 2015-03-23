@@ -7,7 +7,7 @@ dev-repo:     "https://github.com/mirage/merge-queues.git"
 license:      "ISC"
 
 build: [
-  ["./configure" "--prefix" prefix "--%{alcotest+git+cohttp:enable}%-tests"]
+  ["./configure" "--prefix" prefix "--%{alcotest+irmin-unix:enable}%-tests"]
   [make]
 ]
 build-test: [
@@ -16,9 +16,8 @@ build-test: [
 install: [make "install"]
 remove: ["ocamlfind" "remove" "merge-queues"]
 depends: [
-  "irmin" {>= "0.9.3"}
+  "irmin" {>= "0.9.4"}
   "comparelib"
-  "alcotest"  {test}
-  "git"       {test}
-  "cohttp"    {test}
+  "alcotest"   {test}
+  "irmin-unix" {test}
 ]
