@@ -1,6 +1,6 @@
 # OASIS_START
-# DO NOT EDIT (digest: 2e3ef41e2484cfe347f431c24e7c020e)
-version = "0.1.0"
+# DO NOT EDIT (digest: b80f2ead03a2fb3c2b48ac546aed3219)
+version = "0.2.0"
 description = "Mergeable and concurrent queues"
 requires = "irmin comparelib"
 archive(byte) = "merge-queues.cma"
